@@ -1,0 +1,9 @@
+# py_binary launchers use bash instead of needing a system python3,
+# so images only need bash + glibc
+common --@rules_python//python/config_settings:bootstrap_impl=script
+# Create the launcher's venv at runtime (in a temp dir) instead of as a build-time
+# symlink, so image layers can be tarred without resolving symlinks
+common --@rules_python//python/config_settings:venvs_use_declare_symlink=no
+
+build --incompatible_strict_action_env
+test --test_output=errors
