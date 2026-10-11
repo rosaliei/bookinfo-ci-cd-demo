@@ -38,7 +38,9 @@ ENV FLOOD_FACTOR=${flood_factor:-0}
 
 EXPOSE 9080
 WORKDIR /opt/microservices
-RUN python -m unittest discover
+# pip is only needed at build time; removing it also drops its vendored urllib3/msgpack
+RUN python -m unittest discover \
+    && pip3 uninstall -y pip
 
 USER 1000
 CMD ["gunicorn", "-b", "[::]:9080", "productpage:app", "-w", "8", "--keep-alive", "2", "-k", "gevent"]
