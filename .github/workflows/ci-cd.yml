@@ -41,27 +41,6 @@ jobs:
               - *shared
               - 'ratings/**'
 
-  # Steps 2 + 3: Checkout, setup, unit tests (Bazel)
-  test:
-    needs: changes
-    if: needs.changes.outputs.services != '[]'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        service: ${{ fromJSON(needs.changes.outputs.services) }}
-        exclude:
-          - service: shared
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
-        with:
-          bazelisk-cache: true
-          disk-cache: ${{ matrix.service }}
-          repository-cache: true
-      - run: bazel test //${{ matrix.service }}/...
-
   # Step 4: SAST and secret scan (runs in parallel with tests)
   sast:
     needs: changes
@@ -94,19 +73,15 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-  # Steps 6, 7, 8: Build image, scan image, push image (Bazel + rules_oci)
-  build-scan-push:
-    needs: [changes, test, sast, dependency-scan]
-    if: |
-      !cancelled() && !contains(needs.*.result, 'failure') &&
-      needs.changes.outputs.services != '[]'
+  # Steps 2, 3, 6, 7: unit + image tests, build image, scan image — one Bazel
+  # server per service, so the image the tests built is reused, not rebuilt
+  build:
+    needs: changes
+    if: needs.changes.outputs.services != '[]'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
     strategy:
-      fail-fast: false # report scan results for every image
+      fail-fast: false # report results for every service
       matrix:
         service: ${{ fromJSON(needs.changes.outputs.services) }}
         exclude:
@@ -117,13 +92,16 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: ${{ matrix.service }}
+          external-cache: true
           repository-cache: true
 
-      # Step 6: Build the image and load it into the runner's Docker as bookinfo-<service>:ci
-      - name: Build image
+      - name: Test
+        run: bazel test //${{ matrix.service }}/...
+
+      # Load the already-built image into the runner's Docker as bookinfo-<service>:ci
+      - name: Load image
         run: bazel run //${{ matrix.service }}:load
 
-      # Step 7: Image scan
       - name: Scan image (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -132,15 +110,38 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-      # Step 8: Push (main branch only)
-      - name: Log in to GHCR
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+  # Step 8: Push (main branch only, after every test and scan passed).
+  # The disk cache from the build job makes this a cache hit, not a rebuild.
+  push:
+    needs: [changes, build, sast, dependency-scan]
+    if: |
+      !cancelled() && !contains(needs.*.result, 'failure') &&
+      needs.build.result == 'success' &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+        exclude:
+          - service: shared
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ matrix.service }}
+          external-cache: true
+          repository-cache: true
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push image
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: bazel run //${{ matrix.service }}:push -- --tag ${{ github.sha }} --tag latest

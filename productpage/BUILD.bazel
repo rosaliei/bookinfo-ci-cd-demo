@@ -1,7 +1,7 @@
 load("@container_structure_test//:defs.bzl", "container_structure_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("@tar.bzl//tar:mtree.bzl", "mtree_mutate", "mtree_spec")
+load("@tar.bzl//tar:mtree.bzl", "mtree_spec")
 load("@tar.bzl//tar:tar.bzl", "tar")
 
 py_library(
@@ -56,19 +56,11 @@ mtree_spec(
     srcs = [":productpage_bin"],
 )
 
-# Keep the launcher's venv/bin/python3 symlink (it points at the bundled interpreter)
-mtree_mutate(
-    name = "layer_mtree_links",
-    srcs = [":productpage_bin"],
-    mtree = ":layer_mtree",
-    preserve_symlinks = True,
-)
-
 tar(
     name = "layer",
     srcs = [":productpage_bin"],
-    compress = "gzip",
-    mtree = ":layer_mtree_links",
+    compress = "zstd",  # much faster than gzip for the ~interpreter-sized layer
+    mtree = ":layer_mtree",
 )
 
 oci_image(
