@@ -2,3 +2,5 @@
 MODULE.bazel.lock
 node_modules/
 __pycache__/
+# local MCP config (holds API keys)
+.mcp.json
