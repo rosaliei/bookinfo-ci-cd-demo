@@ -4,9 +4,9 @@ name: bookinfo-ci-cd
 on:
   push:
     branches: [main]
-    paths: ["productpage/**", "ratings/**", ".github/workflows/ci-cd.yml"]
+    paths: ["productpage/**", "ratings/**", "MODULE.bazel", ".bazelrc", ".bazelversion", ".github/workflows/ci-cd.yml"]
   pull_request:
-    paths: ["productpage/**", "ratings/**", ".github/workflows/ci-cd.yml"]
+    paths: ["productpage/**", "ratings/**", "MODULE.bazel", ".bazelrc", ".bazelversion", ".github/workflows/ci-cd.yml"]
 
 # Cancel an older run on the same branch when a new push arrives
 concurrency:
@@ -29,50 +29,38 @@ jobs:
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
+            shared: &shared
+              - 'MODULE.bazel'
+              - '.bazelrc'
+              - '.bazelversion'
+              - '.github/workflows/ci-cd.yml'
             productpage:
+              - *shared
               - 'productpage/**'
-              - '.github/workflows/ci-cd.yml'
             ratings:
+              - *shared
               - 'ratings/**'
-              - '.github/workflows/ci-cd.yml'
 
-  # Steps 2 + 3: Checkout, setup, unit tests
-  test-productpage:
+  # Steps 2 + 3: Checkout, setup, unit tests (Bazel)
+  test:
     needs: changes
-    if: contains(fromJSON(needs.changes.outputs.services), 'productpage')
+    if: needs.changes.outputs.services != '[]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
-    defaults:
-      run:
-        working-directory: productpage
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+        exclude:
+          - service: shared
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: productpage/*requirements.txt
-      # Install separately like the Dockerfile: the two files pin different certifi versions
-      - run: pip install --require-hashes -r requirements.txt
-      - run: pip install --require-hashes -r test-requirements.txt
-      - run: python -m unittest discover tests/unit
-
-  test-ratings:
-    needs: changes
-    if: contains(fromJSON(needs.changes.outputs.services), 'ratings')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 6
-    defaults:
-      run:
-        working-directory: ratings
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "24"
-      - run: npm install
-      # ratings has no unit tests yet; at least check the code parses
-      - run: node --check ratings.js
+          bazelisk-cache: true
+          disk-cache: ${{ matrix.service }}
+          repository-cache: true
+      - run: bazel test //${{ matrix.service }}/...
 
   # Step 4: SAST and secret scan (runs in parallel with tests)
   sast:
@@ -84,9 +72,7 @@ jobs:
         with:
           fetch-depth: 0 # gitleaks scans commit history
       - name: SAST (Semgrep)
-        run: |
-          pip install semgrep
-          semgrep scan --config auto --severity ERROR --error productpage ratings
+        run: pipx run semgrep==1.180.0 scan --config auto --severity ERROR --error productpage ratings
       - name: Secret scan (Gitleaks)
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
@@ -108,15 +94,14 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-  # Steps 6, 7, 8: Build image, scan image, push image
+  # Steps 6, 7, 8: Build image, scan image, push image (Bazel + rules_oci)
   build-scan-push:
-    needs: [changes, test-productpage, test-ratings, sast, dependency-scan]
-    # run if nothing failed (a skipped test job is fine)
+    needs: [changes, test, sast, dependency-scan]
     if: |
       !cancelled() && !contains(needs.*.result, 'failure') &&
       needs.changes.outputs.services != '[]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -124,33 +109,25 @@ jobs:
       fail-fast: false # report scan results for every image
       matrix:
         service: ${{ fromJSON(needs.changes.outputs.services) }}
+        exclude:
+          - service: shared
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set image name
-        run: |
-          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE=ghcr.io/${owner}/bookinfo-${{ matrix.service }}" >> "$GITHUB_ENV"
-
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      # Step 6: Build (with layer cache)
-      - name: Build image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
-          context: ./${{ matrix.service }}
-          build-args: service_version=v1
-          load: true
-          push: false
-          tags: ${{ env.IMAGE }}:${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          bazelisk-cache: true
+          disk-cache: ${{ matrix.service }}
+          repository-cache: true
+
+      # Step 6: Build the image and load it into the runner's Docker as bookinfo-<service>:ci
+      - name: Build image
+        run: bazel run //${{ matrix.service }}:load
 
       # Step 7: Image scan
       - name: Scan image (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          image-ref: bookinfo-${{ matrix.service }}:ci
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
@@ -166,7 +143,4 @@ jobs:
 
       - name: Push image
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: |
-          docker tag "$IMAGE:${{ github.sha }}" "$IMAGE:latest"
-          docker push "$IMAGE:${{ github.sha }}"
-          docker push "$IMAGE:latest"
+        run: bazel run //${{ matrix.service }}:push -- --tag ${{ github.sha }} --tag latest

@@ -1,0 +1,87 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@tar.bzl//tar:mtree.bzl", "mtree_spec")
+load("@tar.bzl//tar:tar.bzl", "tar")
+
+py_library(
+    name = "productpage_lib",
+    srcs = ["productpage.py"],
+    data = glob([
+        "static/**",
+        "templates/**",
+    ]),
+    imports = ["."],
+    deps = [
+        "@pypi//flask",
+        "@pypi//json2html",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_instrumentation_flask",
+        "@pypi//opentelemetry_propagator_b3",
+        "@pypi//opentelemetry_sdk",
+        "@pypi//prometheus_client",
+        "@pypi//requests",
+        "@pypi//simplejson",
+    ],
+)
+
+py_test(
+    name = "productpage_test",
+    srcs = [
+        "tests/unit/run_tests.py",
+        "tests/unit/test_productpage.py",
+    ],
+    imports = ["tests/unit"],
+    main = "tests/unit/run_tests.py",
+    deps = [
+        ":productpage_lib",
+        "@pypi_test//requests_mock",
+    ],
+)
+
+py_binary(
+    name = "productpage_bin",
+    srcs = ["serve.py"],
+    main = "serve.py",
+    deps = [
+        ":productpage_lib",
+        "@pypi//gevent",
+        "@pypi//gunicorn",
+    ],
+)
+
+# Image layer: the binary, its runfiles (app, dependencies, interpreter)
+mtree_spec(
+    name = "layer_mtree",
+    srcs = [":productpage_bin"],
+)
+
+tar(
+    name = "layer",
+    srcs = [":productpage_bin"],
+    compress = "gzip",
+    mtree = ":layer_mtree",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim",
+    entrypoint = ["/productpage/productpage_bin"],
+    env = {"FLOOD_FACTOR": "0"},
+    exposed_ports = ["9080/tcp"],
+    tars = [":layer"],
+    user = "1000",
+)
+
+# bazel run //productpage:load  -> loads bookinfo-productpage:ci into Docker
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["bookinfo-productpage:ci"],
+)
+
+# bazel run //productpage:push -- --tag <tag>
+oci_push(
+    name = "push",
+    image = ":image",
+    repository = "ghcr.io/rosaliei/bookinfo-productpage",
+)

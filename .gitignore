@@ -1,0 +1,4 @@
+/bazel-*
+MODULE.bazel.lock
+node_modules/
+__pycache__/

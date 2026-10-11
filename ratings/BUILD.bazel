@@ -1,0 +1,60 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_image_layer", "js_test")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+
+# node_modules from pnpm-lock.yaml
+npm_link_all_packages(name = "node_modules")
+
+DEPS = [
+    ":node_modules/httpdispatcher",
+    ":node_modules/mongodb",
+    ":node_modules/mysql",
+]
+
+js_binary(
+    name = "ratings_bin",
+    data = DEPS,
+    entry_point = "ratings.js",
+)
+
+js_test(
+    name = "ratings_test",
+    data = DEPS + ["ratings.js"],
+    entry_point = "ratings_test.js",
+)
+
+js_image_layer(
+    name = "layers",
+    binary = ":ratings_bin",
+    root = "/app",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim",
+    # /<root>/<package>/<binary>; the js_binary launcher is a bash script
+    entrypoint = [
+        "/usr/bin/bash",
+        "/app/ratings/ratings_bin",
+    ],
+    cmd = ["9080"],
+    env = {"SERVICE_VERSION": "v1"},
+    exposed_ports = ["9080/tcp"],
+    tars = [":layers"],
+    user = "1000",
+    workdir = "/app/ratings/ratings_bin.runfiles/_main",
+)
+
+# bazel run //ratings:load  -> loads bookinfo-ratings:ci into Docker
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["bookinfo-ratings:ci"],
+)
+
+# bazel run //ratings:push -- --tag <tag>
+oci_push(
+    name = "push",
+    image = ":image",
+    repository = "ghcr.io/rosaliei/bookinfo-ratings",
+)

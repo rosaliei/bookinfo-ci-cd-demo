@@ -1,0 +1,6 @@
+# py_binary launchers use bash instead of needing a system python3,
+# so images only need bash + glibc
+common --@rules_python//python/config_settings:bootstrap_impl=script
+
+build --incompatible_strict_action_env
+test --test_output=errors
