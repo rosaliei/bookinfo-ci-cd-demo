@@ -15,7 +15,7 @@
 #   limitations under the License.
 
 import time
-from flask import Flask, request, session, render_template, redirect, g
+from flask import Flask, request, session, render_template, redirect, url_for, g
 from json2html import json2html
 from opentelemetry import trace
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
@@ -29,6 +29,7 @@ import os
 import requests
 import simplejson as json
 import sys
+from urllib.parse import urlparse
 
 
 # These two lines enable debugging at httplib level (requests->urllib3->http.client)
@@ -222,17 +223,27 @@ def health():
     return 'Product page is healthy'
 
 
+# Send the user back to the page they came from, but only within this site
+# (never to an external host taken from the Referer header).
+def local_referrer():
+    ref = urlparse(request.referrer or '')
+    path = ref.path
+    if ref.netloc not in ('', request.host) or not path.startswith('/') or path.startswith('//'):
+        return url_for('front')
+    return path + ('?' + ref.query if ref.query else '')
+
+
 @app.route('/login', methods=['POST'])
 def login():
     user = request.values.get('username')
-    response = app.make_response(redirect(request.referrer))
+    response = app.make_response(redirect(local_referrer()))
     session['user'] = user
     return response
 
 
 @app.route('/logout', methods=['GET'])
 def logout():
-    response = app.make_response(redirect(request.referrer))
+    response = app.make_response(redirect(local_referrer()))
     session.pop('user', None)
     return response
 

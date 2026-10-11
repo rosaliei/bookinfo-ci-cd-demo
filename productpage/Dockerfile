@@ -35,6 +35,5 @@ EXPOSE 9080
 WORKDIR /opt/microservices
 RUN python -m unittest discover
 
-CMD ["gunicorn", "-b", "[::]:9080", "productpage:app", "-w", "8", "--keep-alive", "2", "-k", "gevent"]
-
 USER 1000
+CMD ["gunicorn", "-b", "[::]:9080", "productpage:app", "-w", "8", "--keep-alive", "2", "-k", "gevent"]

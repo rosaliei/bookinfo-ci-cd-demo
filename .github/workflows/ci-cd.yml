@@ -52,7 +52,9 @@ jobs:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: productpage/*requirements.txt
-      - run: pip install --require-hashes -r requirements.txt -r test-requirements.txt
+      # Install separately like the Dockerfile: the two files pin different certifi versions
+      - run: pip install --require-hashes -r requirements.txt
+      - run: pip install --require-hashes -r test-requirements.txt
       - run: python -m unittest discover tests/unit
 
   test-ratings:
@@ -97,7 +99,7 @@ jobs:
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.28.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -146,7 +148,7 @@ jobs:
 
       # Step 7: Image scan
       - name: Scan image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ github.sha }}
           severity: HIGH,CRITICAL
