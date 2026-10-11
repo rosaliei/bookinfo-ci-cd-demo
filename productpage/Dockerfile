@@ -12,7 +12,12 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-FROM python:3.13.3-slim
+FROM python:3.13-slim
+
+# Pick up Debian security fixes newer than the base image
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /
 
