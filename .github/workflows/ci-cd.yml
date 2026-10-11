@@ -92,8 +92,14 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: ${{ matrix.service }}
-          external-cache: true
           repository-cache: true
+      # Unpacked external repos (interpreter, wheels, Node, base image). setup-bazel's
+      # external-cache skips repos under 10 MB, i.e. every wheel, so cache the whole dir
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bazel/external
+          key: bazel-external-${{ matrix.service }}-${{ hashFiles('MODULE.bazel', '.bazelversion', '.bazelrc', 'productpage/*requirements.txt', 'ratings/pnpm-lock.yaml') }}
+          restore-keys: bazel-external-${{ matrix.service }}-
 
       - name: Test
         run: bazel test //${{ matrix.service }}/...
@@ -134,8 +140,14 @@ jobs:
         with:
           bazelisk-cache: true
           disk-cache: ${{ matrix.service }}
-          external-cache: true
           repository-cache: true
+      # Unpacked external repos (interpreter, wheels, Node, base image). setup-bazel's
+      # external-cache skips repos under 10 MB, i.e. every wheel, so cache the whole dir
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bazel/external
+          key: bazel-external-${{ matrix.service }}-${{ hashFiles('MODULE.bazel', '.bazelversion', '.bazelrc', 'productpage/*requirements.txt', 'ratings/pnpm-lock.yaml') }}
+          restore-keys: bazel-external-${{ matrix.service }}-
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
