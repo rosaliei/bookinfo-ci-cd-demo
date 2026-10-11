@@ -1,0 +1,15 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: "1000"
+  exposedPorts: ["9080"]
+  cmd: ["9080"]
+
+commandTests:
+  # Same launcher as the real entrypoint, as uid 1000, with an invalid port:
+  # Node starts, ratings.js and its modules load, and it fails only when binding
+  - name: server boots up to binding the port
+    command: /usr/bin/bash
+    args: ["/app/ratings/ratings_bin", "not-a-port"]
+    exitCode: 1
+    expectedError: ["ERR_SOCKET_BAD_PORT"]

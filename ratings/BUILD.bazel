@@ -1,4 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_image_layer", "js_test")
+load("@container_structure_test//:defs.bzl", "container_structure_test")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 
@@ -43,6 +44,13 @@ oci_image(
     tars = [":layers"],
     user = "1000",
     workdir = "/app/ratings/ratings_bin.runfiles/_main",
+)
+
+# Runs the image in Docker and checks it starts as configured (see image_test.yaml)
+container_structure_test(
+    name = "image_test",
+    configs = ["image_test.yaml"],
+    image = ":image",
 )
 
 # bazel run //ratings:load  -> loads bookinfo-ratings:ci into Docker

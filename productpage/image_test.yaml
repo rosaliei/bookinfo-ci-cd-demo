@@ -1,0 +1,14 @@
+schemaVersion: 2.0.0
+
+metadataTest:
+  user: "1000"
+  exposedPorts: ["9080"]
+  entrypoint: ["/productpage/productpage_bin"]
+
+commandTests:
+  # Same launcher as the real entrypoint, as uid 1000: the bundled interpreter,
+  # productpage and gunicorn/gevent must all import
+  - name: app imports
+    command: /productpage/productpage_bin
+    args: ["--check"]
+    expectedOutput: ["productpage ok"]

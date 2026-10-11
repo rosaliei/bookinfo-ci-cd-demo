@@ -1,3 +1,4 @@
+load("@container_structure_test//:defs.bzl", "container_structure_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@tar.bzl//tar:mtree.bzl", "mtree_mutate", "mtree_spec")
@@ -78,6 +79,13 @@ oci_image(
     exposed_ports = ["9080/tcp"],
     tars = [":layer"],
     user = "1000",
+)
+
+# Runs the image in Docker and checks it starts as configured (see image_test.yaml)
+container_structure_test(
+    name = "image_test",
+    configs = ["image_test.yaml"],
+    image = ":image",
 )
 
 # bazel run //productpage:load  -> loads bookinfo-productpage:ci into Docker

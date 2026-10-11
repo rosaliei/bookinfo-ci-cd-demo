@@ -20,6 +20,13 @@ import sys
 from gunicorn.app.wsgiapp import run
 
 if __name__ == '__main__':
+    if '--check' in sys.argv:
+        # Used by the image test: confirm the app and server deps import, then exit
+        import gevent  # noqa: F401
+        import productpage  # noqa: F401
+        print('productpage ok')
+        sys.exit(0)
+
     sys.argv = ['gunicorn', '-b', '[::]:9080', 'productpage:app',
                 '-w', '8', '--keep-alive', '2', '-k', 'gevent']
     sys.exit(run())
