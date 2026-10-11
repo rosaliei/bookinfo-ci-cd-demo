@@ -1,0 +1,36 @@
+# Bookinfo: productpage -> details, productpage -> reviews -> ratings
+# Service names match the default hostnames the apps look up (port 9080).
+services:
+  productpage:
+    build: ./src/productpage
+    image: bookinfo/productpage:local
+    ports:
+      - "9080:9080"
+    depends_on:
+      - details
+      - reviews
+
+  details:
+    build:
+      context: ./src/details
+      args:
+        service_version: v1
+    image: bookinfo/details:local
+
+  reviews:
+    build:
+      context: ./src/reviews
+      args:
+        service_version: v2
+        enable_ratings: "true"
+        star_color: black
+    image: bookinfo/reviews:local
+    depends_on:
+      - ratings
+
+  ratings:
+    build:
+      context: ./src/ratings
+      args:
+        service_version: v1
+    image: bookinfo/ratings:local
